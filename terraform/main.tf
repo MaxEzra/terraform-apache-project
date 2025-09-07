@@ -1,5 +1,5 @@
 ############################
-# Data / Locals
+# Data
 ############################
 
 # Default VPC & subnets (used when create_vpc = false)
@@ -14,6 +14,17 @@ data "aws_subnets" "default_vpc_subnets" {
   }
 }
 
+locals {
+  name_prefix = "${var.project_name}-${var.env}"
+
+  tags_base = merge(
+    {
+      Name = "${var.project_name}-${var.env}"
+    },
+    var.common_tags
+  )
+}
+
 # Latest Ubuntu 22.04 LTS (Canonical)
 data "aws_ami" "ubuntu_2204" {
   most_recent = true
@@ -22,24 +33,6 @@ data "aws_ami" "ubuntu_2204" {
     name   = "name"
     values = [var.ami_name_filter]
   }
-}
-
-locals {
-  name_prefix = "${var.project_name}-${var.env}"
-
-  # Conditionally reference IDs depending on whether we create a VPC
-  vpc_id = var.create_vpc ? aws_vpc.this[0].id : data.aws_vpc.default.id
-
-  subnet_id = var.create_vpc
-    ? aws_subnet.public[0].id
-    : data.aws_subnets.default_vpc_subnets.ids[0]
-
-  tags_base = merge(
-    {
-      Name = local.name_prefix
-    },
-    var.common_tags
-  )
 }
 
 ############################
@@ -55,11 +48,14 @@ resource "aws_vpc" "this" {
   tags = merge(local.tags_base, { Component = "vpc" })
 }
 
-resource "aws_internet_gateway" "this" {
-  count  = var.create_vpc ? 1 : 0
-  vpc_id = aws_vpc.this[0].id
+############################
+# Locals (dependent on resources)
+############################
 
-  tags = merge(local.tags_base, { Component = "igw" })
+locals {
+  vpc_id = var.create_vpc ? aws_vpc.this[0].id : data.aws_vpc.default.id
+
+  subnet_id = var.create_vpc ? aws_subnet.public[0].id : data.aws_subnets.default_vpc_subnets.ids[0]
 }
 
 resource "aws_subnet" "public" {
@@ -186,3 +182,4 @@ output "website_url" {
   value       = "http://${coalesce(try(aws_eip.web[0].public_ip, null), aws_instance.web.public_ip)}"
   description = "Convenience URL"
 }
+
